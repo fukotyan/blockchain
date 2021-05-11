@@ -1,279 +1,190 @@
-#define SWAP_BYTES
-#define USE_STD_MEMCPY
-#define SELF_TEST
-#define SELF_TSET1
-
-#ifdef USE_STD_MEMCPY
-#include <string.h>
-#include<time.h>
-#include<stdlib.h>
-#endif
-#include "hash256.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#define RL(x,n)   (((x) << n) | ((x) >> (32 - n)))
-#define RR(x,n)   (((x) >> n) | ((x) << (32 - n)))
-
-#define S0(x)  (RR((x), 2) ^ RR((x),13) ^ RR((x),22))
-#define S1(x)  (RR((x), 6) ^ RR((x),11) ^ RR((x),25))
-#define G0(x)  (RR((x), 7) ^ RR((x),18) ^ ((x) >> 3))
-#define G1(x)  (RR((x),17) ^ RR((x),19) ^ ((x) >> 10))
-
-#ifdef SWAP_BYTES
-#define BSWP(x,y)  _bswapw((uint32_t *)(x), (uint32_t)(y))
+#include <bits/stdc++.h>
+#include "hash.h"
+#define ull unsigned long long
+#define DATASIZE (1024 * 1024 - 16)
+#define BLOCKCNT 10
+#define INFU 18446744073709551615
+#define rightrotate(w, n) ((w >> n) | (w) << (32 - (n)))
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define copy_uint32(p, val) *((uint32_t *)p) = __builtin_bswap32((val))
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define copy_uint32(p, val) *((uint32_t *)p) = (val)
 #else
-#define BSWP(p,n)
+#error "Unsupported target architecture endianess!"
 #endif
-#ifdef USE_STD_MEMCPY
-#define MEMCP(x,y,z) memcpy((x),(y),(z))
-#else
-#define MEMCP(x,y,z) _memcp((x),(y),(z))
-#endif
-
-#ifndef __cdecl
-#define __cdecl
-#endif
-
-	static const uint32_t K[64] = {
-		 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
-		 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-		 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-		 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-		 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-		 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-		 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-		 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-		 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-		 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-		 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
-		 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-		 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
-		 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-		 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-		 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-	};
-
-	/* -------------------------------------------------------------------------- */
-	static void _bswapw(uint32_t *p, uint32_t i)
-	{
-		while (i--) p[i] = (RR(p[i], 24) & 0x00ff00ff) | (RR(p[i], 8) & 0xff00ff00);
-
-	} /* _bswapw */
-
-	/* -------------------------------------------------------------------------- */
-#ifndef USE_STD_MEMCPY
-	void * __cdecl _memcp(void *d, const void *s, uint32_t sz)
-	{
-		void *rv = d;
-
-		while (sz--) *(char *)d = *(char *)s, d = (char *)d + 1, s = (char *)s + 1;
-
-		return(rv);
-	} /* _memcp */
-#endif
-
-/* -------------------------------------------------------------------------- */
-	static void _rtrf(uint32_t *b, uint32_t *p, uint32_t i, uint32_t j)
-	{
-#define B(x, y) b[(x-y) & 7]
-#define P(x, y) p[(x+y) & 15]
-
-		B(7, i) += (j ? (p[i & 15] += G1(P(i, 14)) + P(i, 9) + G0(P(i, 1))) : p[i & 15])
-			+ K[i + j] + S1(B(4, i))
-			+ (B(6, i) ^ (B(4, i) & (B(5, i) ^ B(6, i))));
-		B(3, i) += B(7, i);
-		B(7, i) += S0(B(0, i)) + ((B(0, i) & B(1, i)) | (B(2, i) & (B(0, i) ^ B(1, i))));
-
-#undef P
-#undef B
-	} /* _rtrf */
-
-	/* -------------------------------------------------------------------------- */
-	static void _hash(sha256_context *ctx)
-	{
-		uint32_t b[8], *p, j;
-
-		b[0] = ctx->hash[0]; b[1] = ctx->hash[1]; b[2] = ctx->hash[2];
-		b[3] = ctx->hash[3]; b[4] = ctx->hash[4]; b[5] = ctx->hash[5];
-		b[6] = ctx->hash[6]; b[7] = ctx->hash[7];
-
-		for (p = ctx->buf, j = 0; j < 64; j += 16)
-			_rtrf(b, p, 0, j), _rtrf(b, p, 1, j), _rtrf(b, p, 2, j),
-			_rtrf(b, p, 3, j), _rtrf(b, p, 4, j), _rtrf(b, p, 5, j),
-			_rtrf(b, p, 6, j), _rtrf(b, p, 7, j), _rtrf(b, p, 8, j),
-			_rtrf(b, p, 9, j), _rtrf(b, p, 10, j), _rtrf(b, p, 11, j),
-			_rtrf(b, p, 12, j), _rtrf(b, p, 13, j), _rtrf(b, p, 14, j),
-			_rtrf(b, p, 15, j);
-
-		ctx->hash[0] += b[0]; ctx->hash[1] += b[1]; ctx->hash[2] += b[2];
-		ctx->hash[3] += b[3]; ctx->hash[4] += b[4]; ctx->hash[5] += b[5];
-		ctx->hash[6] += b[6]; ctx->hash[7] += b[7];
-
-	} /* _hash */
-
-	/* -------------------------------------------------------------------------- */
-	void sha256_init(sha256_context *ctx)
-	{
-		ctx->len[0] = ctx->len[1] = 0;
-		ctx->hash[0] = 0x6a09e667; ctx->hash[1] = 0xbb67ae85;
-		ctx->hash[2] = 0x3c6ef372; ctx->hash[3] = 0xa54ff53a;
-		ctx->hash[4] = 0x510e527f; ctx->hash[5] = 0x9b05688c;
-		ctx->hash[6] = 0x1f83d9ab; ctx->hash[7] = 0x5be0cd19;
-
-	} /* sha256_init */
-
-	/* -------------------------------------------------------------------------- */
-	void sha256_hash(sha256_context *ctx, uint8_t *dat, uint32_t sz)
-	{
-		register uint32_t i = ctx->len[0] & 63, l, j;
-
-		if ((ctx->len[0] += sz) < sz)  ++(ctx->len[1]);
-
-		for (j = 0, l = 64 - i; sz >= l; j += l, sz -= l, l = 64, i = 0)
-		{
-			MEMCP((char *)ctx->buf + i, &dat[j], l);
-			BSWP(ctx->buf, 16);
-			_hash(ctx);
-		}
-		MEMCP((char *)ctx->buf + i, &dat[j], sz);
-
-	} /* _hash */
-
-	/* -------------------------------------------------------------------------- */
-	void sha256_done(sha256_context *ctx, uint8_t *buf)
-	{
-		uint32_t i = (uint32_t)(ctx->len[0] & 63), j = ((~i) & 3) << 3;
-
-		BSWP(ctx->buf, (i + 3) >> 2);
-
-		ctx->buf[i >> 2] &= 0xffffff80 << j;  /* add padding */
-		ctx->buf[i >> 2] |= 0x00000080 << j;
-
-		if (i < 56) i = (i >> 2) + 1;
-		else ctx->buf[15] ^= (i < 60) ? ctx->buf[15] : 0, _hash(ctx), i = 0;
-
-		while (i < 14) ctx->buf[i++] = 0;
-
-		ctx->buf[14] = (ctx->len[1] << 3) | (ctx->len[0] >> 29); /* add length */
-		ctx->buf[15] = ctx->len[0] << 3;
-
-		_hash(ctx);
-
-		for (i = 0; i < 32; i++)
-			ctx->buf[i % 16] = 0, /* may remove this line in case of a DIY cleanup */
-			buf[i] = (uint8_t)(ctx->hash[i >> 2] >> ((~i & 3) << 3));
-
-	} /* sha256_done */
-
-
-#ifdef SELF_TEST
-#pragma warning (push, 0)
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#pragma warning(pop)
-#ifdef SELF_TEST1
-	const char *buf[] = {
-		"",
-		"e3b0c442 98fc1c14 9afbf4c8 996fb924 27ae41e4 649b934c a495991b 7852b855",
-
-		"abc",
-		"ba7816bf 8f01cfea 414140de 5dae2223 b00361a3 96177a9c b410ff61 f20015ad",
-
-		"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
-		"248d6a61 d20638b8 e5c02693 0c3e6039 a33ce459 64ff2167 f6ecedd4 19db06c1",
-
-		"The quick brown fox jumps over the lazy dog",
-		"d7a8fbb3 07d78094 69ca9abc b0082e4f 8d5651e4 6d3cdb76 2d02d0bf 37c9e592",
-
-		"The quick brown fox jumps over the lazy cog", 
-		"e4c4d8f3 bf76b692 de791a17 3e053211 50f7a345 b46484fe 427f6acc 7ecc81be",
-
-		"bhn5bjmoniertqea40wro2upyflkydsibsk8ylkmgbvwi420t44cq034eou1szc1k0mk46oeb7ktzmlxqkbte2sy",
-		"9085df2f 02e0cc45 5928d0f5 1b27b4bf 1d9cd260 a66ed1fd a11b0a3f f5756d99"
-	};
-	int main(int argc, char *argv[])
-	{
-		sha256_context ctx;
-		uint8_t hv[32];
-		uint32_t i, j;
-
-		for (j = 0; j < (sizeof(buf) / sizeof(buf[0])); j += 2)
-		{
-			sha256_init(&ctx);
-			sha256_hash(&ctx, (uint8_t *)buf[j], (uint32_t)strlen(buf[j]));
-			sha256_done(&ctx, hv);
-			printf("input = %s\ndigest: %s\nresult: ", buf[j], buf[j + 1]);
-			for (i = 0; i < 32; i++) printf("%02x%s", hv[i], ((i % 4) == 3) ? " " : "");
-			printf("\n\n");
-		}
-
-		for (j = 1; j < (uint32_t)argc; j++)
-		{
-			printf("argv[%d]: %s\nresult: ", (int)j, argv[j]);
-			sha256_init(&ctx);
-			sha256_hash(&ctx, (uint8_t *)argv[j], (uint32_t)strlen(argv[j]));
-			sha256_done(&ctx, hv);
-			for (i = 0; i < 32; i++) printf("%02x%s", hv[i], ((i % 4) == 3) ? " " : "");
-			printf("\n\n");
-		}
-
-		return 0;
-	} /* main */
-#else
-	char nounce[17] = "abcdefghijklmnop";
-	char nounce2[17] = "0000000000000000";
-	char *buf[] =
-	{
-		nounce,
-		nounce,
-		nounce2,
-		nounce2,
-	};
-	int main(int argc, char *argv[])
-	{
-		sha256_context ctx;
-		uint8_t hv[32];
-		uint32_t i, j;
-
-		for (j = 0; j < (sizeof(buf) / sizeof(buf[0])); j += 2)
-		{
-			sha256_init(&ctx);
-			sha256_hash(&ctx, (uint8_t *)buf[j], (uint32_t)strlen(buf[j]));
-			sha256_done(&ctx, hv);
-			printf("input = %s\ndigest: %s\nresult: ", buf[j], buf[j + 1]);
-			for (i = 0; i < 32; i++) printf("%02x%s", hv[i], ((i % 4) == 3) ? " " : "");
-			printf("\n\n");
-		}
-
-		for (j = 1; j < (uint32_t)argc; j++)
-		{
-			int a;
-			printf("argv[%d]: %s\nresult: ", (int)j, argv[j]);
-			sha256_init(&ctx);
-			sha256_hash(&ctx, (uint8_t *)argv[j], (uint32_t)strlen(argv[j]));
-			sha256_done(&ctx, hv);
-			for (i = 0;i < 8;i++)if(hv[i] != 0)a=0;
-
-			while (a!=0)
-			{
-				sha256_init(&ctx);
-				sha256_hash(&ctx, (uint8_t *)argv[j], (uint32_t)strlen(argv[j]));
-				sha256_done(&ctx, hv);
-
-			}
-			for (i = 0; i < 32; i++) printf("%02x%s", hv[i], ((i % 4) == 3) ? " " : "");
-			printf("\n\n");
-		}
-
-		return 0;
-	} /* main */
-#endif
-#endif
-
-#ifdef __cplusplus
+using namespace std;
+struct Blockdata
+{
+    unsigned char data[DATASIZE];
+    ull amount;
+} block[BLOCKCNT];
+unsigned char in[16];
+unsigned char out[64];
+static const uint32_t k[64] =
+    {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+void sha256(const unsigned char *data, size_t len, unsigned char *out)
+{
+    uint32_t h0 = 0x6a09e667;
+    uint32_t h1 = 0xbb67ae85;
+    uint32_t h2 = 0x3c6ef372;
+    uint32_t h3 = 0xa54ff53a;
+    uint32_t h4 = 0x510e527f;
+    uint32_t h5 = 0x9b05688c;
+    uint32_t h6 = 0x1f83d9ab;
+    uint32_t h7 = 0x5be0cd19;
+    int r = (int)(len * 8 % 512);
+    int append = ((r < 448) ? (448 - r) : (448 + 512 - r)) / 8;
+    size_t new_len = len + append + 8;
+    unsigned char buf[new_len];
+    for (int i = 0; i < append; i++)
+        (buf + len)[i] = 0;
+    if (len > 0)
+    {
+        memcpy(buf, data, len);
+    }
+    buf[len] = (unsigned char)0x80;
+    uint64_t bits_len = len * 8;
+    for (int i = 0; i < 8; i++)
+    {
+        buf[len + append + i] = (bits_len >> ((7 - i) * 8)) & 0xff;
+    }
+    uint32_t w[64];
+    for (int i = 0; i < 64; i++)
+        w[i] = 0;
+    size_t chunk_len = new_len / 64;
+    for (int idx = 0; idx < chunk_len; idx++)
+    {
+        uint32_t val = 0;
+        for (int i = 0; i < 64; i++)
+        {
+            val = val | (*(buf + idx * 64 + i) << (8 * (3 - i)));
+            if (i % 4 == 3)
+            {
+                w[i / 4] = val;
+                val = 0;
+            }
+        }
+        for (int i = 16; i < 64; i++)
+        {
+            uint32_t s0 = rightrotate(w[i - 15], 7) ^ rightrotate(w[i - 15], 18) ^ (w[i - 15] >> 3);
+            uint32_t s1 = rightrotate(w[i - 2], 17) ^ rightrotate(w[i - 2], 19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+        uint32_t a = h0;
+        uint32_t b = h1;
+        uint32_t c = h2;
+        uint32_t d = h3;
+        uint32_t e = h4;
+        uint32_t f = h5;
+        uint32_t g = h6;
+        uint32_t h = h7;
+        for (int i = 0; i < 64; i++)
+        {
+            uint32_t s_1 = rightrotate(e, 6) ^ rightrotate(e, 11) ^ rightrotate(e, 25);
+            uint32_t ch = (e & f) ^ (~e & g);
+            uint32_t temp1 = h + s_1 + ch + k[i] + w[i];
+            uint32_t s_0 = rightrotate(a, 2) ^ rightrotate(a, 13) ^ rightrotate(a, 22);
+            uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            uint32_t temp2 = s_0 + maj;
+            h = g;
+            g = f;
+            f = e;
+            e = d + temp1;
+            d = c;
+            c = b;
+            b = a;
+            a = temp1 + temp2;
+        }
+        h0 += a;
+        h1 += b;
+        h2 += c;
+        h3 += d;
+        h4 += e;
+        h5 += f;
+        h6 += g;
+        h7 += h;
+    }
+    copy_uint32(out, h0);
+    copy_uint32(out + 4, h1);
+    copy_uint32(out + 8, h2);
+    copy_uint32(out + 12, h3);
+    copy_uint32(out + 16, h4);
+    copy_uint32(out + 20, h5);
+    copy_uint32(out + 24, h6);
+    copy_uint32(out + 28, h7);
+    for (int i = 4; i <= 7; i++)
+        out[i] = out[i + 12];
 }
-#endif
+bool check(int p) //p表示4bit的个数
+{
+    bool ok = 1;
+    if (p % 2 == 0)
+    {
+        for (int i = 0; i < p / 2; i++)
+            if (out[i] != 0)
+                ok = 0;
+    }
+    else
+    {
+        for (int i = 0; i < p / 2; i++)
+            if (out[i] != 0)
+                ok = 0;
+        if (out[p / 2] >= 16)
+            ok = 0;
+    }
+    return ok;
+}
+mt19937_64 rand_num((chrono::system_clock::now().time_since_epoch()).count());
+signed main()
+{
+    int p = 2; //p表示4bit的个数
+    for (ull a = 0; a <= INFU; a++)
+    {
+        for (ull b = 0; b <= INFU; b++)
+        {
+            ull tmpa = a, tmpb = b;
+            for (int i = 0; i < 8; i++)
+            {
+                in[i] = tmpa % 256;
+                tmpa /= 256;
+            }
+            for (int i = 8; i < 16; i++)
+            {
+                in[i] = tmpb % 256;
+                tmpb /= 256;
+            }
+            sha256(in, 16, out);
+            if (check(p))
+            {
+                printf("nonce1=");
+                cout << a << endl;
+                printf("nonce2=");
+                cout << b << endl;
+                printf("data=");
+                for (int i = 0; i <= 16; i++)
+                    printf("%d ", in[i]);
+                cout << endl;
+                printf("sha=");
+                for (int i = 0; i <= 7; i++)
+                {
+                    if (out[i] < 16)
+                        printf("0");
+                    printf("%x ", out[i]);
+                }
+                cout << endl;
+                return 0;
+            }
+        }
+        memset(in, sizeof(in), 0);
+        memset(out, sizeof(out), 0);
+    }
+    return 0;
+}
