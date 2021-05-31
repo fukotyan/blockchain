@@ -213,7 +213,7 @@ int main() {
 	return 0;
 	system("pause");
 }
-void writefile(BLOCK *block, int num)//num为块序号 
+void writefile(BLOCK *block, int num) 
 {
 	char s[] = "blockchain_data/block";
 	char n[4];
